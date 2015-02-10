@@ -1,6 +1,7 @@
 from bs4 import BeautifulSoup
 import urllib2
 import json
+import time
 
 class Goal(object):
     """Data Structures for goals parsed from hockey-reference.com"""
@@ -21,27 +22,65 @@ class ATLBot(object):
 	self.apikey = open('api.key', 'r').read().strip()
         self.url = 'https://api.hockeystreams.com/Scores?key={}&event=nhl'.format(self.apikey)
 
-    def retreieveGames(self):
+    def start(self):
+        prevScores = {} # Dict of previous scores - don't want to ask site for scorers unless
+                        # the score has changed
+        while True:
+            import pdb; pdb.Pdb().set_trace()
+            games = self.getGames()
+            
+            #only get score if started
+            for game in games:
+                print game
+                
+                started = True if not str(game['isPlaying']) == '0' else False
+                homeAbbrev = str(game['shortHomeTeam'])
+                homeScore = int(game['homeScore'])
+                awayScore = int(game['awayScore']) 
+
+                if started and not (homeScore, awayScore) == prevScores.get(homeAbbrev,(0,0)):
+                    self.getScorers(homeAbbrev)
+                else:
+                    pass
+
+                prevScores[homeAbbrev] = (homeScore, awayScore)
+
+
+            time.sleep(60)
+
+
+    def getGames(self):
 	response = urllib2.urlopen(self.url)
 	games = json.load(response)
 	return games['scores']
 
-    def getScorers(self):
-	gameurl = 'http://www.hockey-reference.com/boxscores/201502040EDM.html'
+    def getScorers(self, homeTeam):
+        
+        # build URL + request html from it
+        today = time.strftime('%Y%m%d')
+	gameurl = 'http://www.hockey-reference.com/boxscores/{}0{}.html'.format(today, homeTeam)
 	gamedoc = urllib2.urlopen(gameurl)
 	soup = BeautifulSoup(gamedoc)
 
+        # Parse html
 	scoringTable = soup.find('table', id='scoring')
-        import pdb; pdb.Pdb().set_trace()
-        print scoringTable
-        #dict of period, K is period num, V is list of goal scorers text... right?
         goalList = []
         curPeriod = 1
+
+        # get all table records and goal data from inside them
         trs = scoringTable.find_all('tr')
         for record in trs:
-            print record
+
+            #determine what period in quite possibly the ugliest possible manner
             if record.th and 'Period' in record.th.text:
-                curPeriod = 2
+                if '1st' in record.th.text:
+                    curPeriod = 1
+                elif '2nd' in record.th.text:
+                    curPeriod = 2
+                elif '3rd' in record.th.text:
+                    curPeriod = 3
+                else:
+                    curPeriod = 'OT'
             else:
                 fields = record.find_all('td') # will get all table data
                 # will always have three values in this list:
@@ -59,8 +98,7 @@ class ATLBot(object):
 
 def main():
     bot = ATLBot()
-    games = bot.retreieveGames()
-    bot.getScorers()
+    bot.start()
 
 if __name__=='__main__':
     main()
